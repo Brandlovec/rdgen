@@ -2,8 +2,8 @@ name: Sync upstream
 
 on:
   schedule:
-    - cron: "0 * * * *"   # každou hodinu
-  workflow_dispatch:       # možnost spustit ručně
+    - cron: "0 0 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -11,14 +11,15 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.PAT_SYNC }}   # tvůj PAT
+      BRANCH: master                      # změň na main, pokud je potřeba
     steps:
       - name: Sync fork with upstream
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: master   # rdgen používá větev "master"
         run: |
+          set -e
           gh api \
             -X POST \
             -H "Accept: application/vnd.github+json" \
-            /repos/${{ github.repository }}/merge-upstream \
-            -f branch=$BRANCH
+            "/repos/${{ github.repository }}/merge-upstream" \
+            -f branch="$BRANCH"
