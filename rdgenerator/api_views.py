@@ -1,13 +1,14 @@
 import json
+import os
 import re
 from django.http import JsonResponse
 from django.conf import settings as _settings
-from .views import generate_custom_client, _get_run_status
+from .views import generate_custom_client, _get_run_status, _UUID_RE
 
 
 # Field validation constraints (mirrored from GenerateForm)
 PLATFORM_CHOICES = ['windows', 'windows-x86', 'linux', 'android', 'macos']
-VERSION_CHOICES = ['master', '1.4.9', '1.4.8', '1.4.7', '1.4.6', '1.4.5', '1.4.4', '1.4.3', '1.4.2', '1.4.1', '1.4.0']
+VERSION_CHOICES = ['master', '1.5.0', '1.4.9', '1.4.8', '1.4.7', '1.4.6', '1.4.5', '1.4.4', '1.4.3', '1.4.2', '1.4.1', '1.4.0']
 DIRECTION_CHOICES = ['incoming', 'outgoing', 'both']
 INSTALLATION_CHOICES = ['installationY', 'installationN']
 SETTINGS_CHOICES = ['settingsY', 'settingsN']
@@ -76,6 +77,10 @@ def validate_generate_params(data):
     # Boolean fields
     for field in BOOL_FIELDS:
         value = data.get(field, False)
+        
+        if isinstance(value, str) and value.lower() == 'on':
+            value = True
+            
         if not isinstance(value, bool):
             errors[field] = 'Must be a boolean value.'
         else:
@@ -120,6 +125,64 @@ def api_generate(request):
     except (json.JSONDecodeError, ValueError) as e:
         return JsonResponse({"success": False, "error": f"Invalid JSON: {str(e)}"}, status=400)
 
+    # Optional platform override: allows the caller to overwrite the
+    # "platform" key carried in the JSON body (e.g. when the saved config
+    # says "windows" but the build should run as "linux"/"android"). The
+    # override may be supplied as a query parameter or as an additional
+    # field in the request body.
+    PLATFORM_OVERRIDE_KEYS = (
+        'platform', 'set_platform', 'setPlatform', 'platform_override',
+        'override_platform', 'platformOverride', 'overridePlatform',
+        'platform_setting', 'platformSetting',
+    )
+    override_platform = None
+    for key in PLATFORM_OVERRIDE_KEYS:
+        value = request.GET.get(key)
+        if value is not None and value != '':
+            override_platform = value
+            break
+    # Also accept any query parameter whose value is a valid platform choice.
+    if override_platform is None:
+        for key, value in request.GET.items():
+            if isinstance(value, str) and value in PLATFORM_CHOICES:
+                override_platform = value
+                break
+    if override_platform is None and isinstance(data, dict):
+        for key in PLATFORM_OVERRIDE_KEYS:
+            if key in data and data.get(key) not in (None, ''):
+                if key != 'platform':
+                    override_platform = data.get(key)
+                    break
+    # Fall back to a generic scan: any body field (other than "platform")
+    # whose value is a valid platform choice also acts as an override.
+    if override_platform is None and isinstance(data, dict):
+        for key, value in data.items():
+            if key == 'platform':
+                continue
+            key_l = str(key).lower()
+            if not isinstance(value, str) or value not in PLATFORM_CHOICES:
+                continue
+            # Only treat a field as a platform override when its name suggests
+            # that intent, to avoid misreading ordinary fields (e.g. appname)
+            # whose value happens to be a platform name.
+            if ('platform' in key_l or 'override' in key_l or 'set' in key_l
+                    or key_l in ('os', 'target', 'targetos')):
+                override_platform = value
+                break
+
+    if override_platform is not None:
+        if override_platform not in PLATFORM_CHOICES:
+            return JsonResponse({
+                "success": False,
+                "error": "Validation errors",
+                "details": {"platform": f"Invalid choice. Must be one of: {PLATFORM_CHOICES}"}
+            }, status=400)
+        # Make validation + generation honour the override instead of (or
+        # in addition to) the platform already present in the JSON body.
+        if isinstance(data, dict):
+            data = dict(data)
+            data['platform'] = override_platform
+
     cleaned, errors = validate_generate_params(data)
     if errors:
         return JsonResponse({
@@ -147,6 +210,8 @@ def api_status(request):
 
     Checks the generation status for a given UUID.
     Returns JSON with status, uuid, and optional log_url/filename/platform.
+    On a success status, also returns "files": a list of filenames that were
+    created/saved for this run.
     """
     if request.method != 'GET':
         return JsonResponse({"success": False, "error": "Method not allowed. Use GET."}, status=405)
@@ -172,5 +237,17 @@ def api_status(request):
         response_data['filename'] = filename
     if platform:
         response_data['platform'] = platform
+
+    # When generation completed successfully, expose the filenames that were
+    # actually uploaded/saved for this run so API consumers can download them.
+    if result.get('status') == 'success' and _UUID_RE.match(uuid_val or ''):
+        created_files = []
+        run_dir = os.path.join('exe', uuid_val)
+        if os.path.isdir(run_dir):
+            for name in sorted(os.listdir(run_dir)):
+                full_path = os.path.join(run_dir, name)
+                if os.path.isfile(full_path):
+                    created_files.append(name)
+        response_data['files'] = created_files
 
     return JsonResponse(response_data)
