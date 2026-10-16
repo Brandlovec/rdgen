@@ -183,6 +183,54 @@ def api_generate(request):
             data = dict(data)
             data['platform'] = override_platform
 
+    # Optional version override, mirroring the optional platform override.
+    # Any value must be one of VERSION_CHOICES.
+    VERSION_OVERRIDE_KEYS = (
+        'version', 'set_version', 'setVersion', 'version_override',
+        'override_version', 'versionOverride', 'overrideVersion',
+        'version_setting', 'versionSetting',
+    )
+    override_version = None
+    for key in VERSION_OVERRIDE_KEYS:
+        value = request.GET.get(key)
+        if value is not None and value != '':
+            override_version = value
+            break
+    if override_version is None:
+        for key, value in request.GET.items():
+            if isinstance(value, str) and value in VERSION_CHOICES:
+                override_version = value
+                break
+    if override_version is None and isinstance(data, dict):
+        for key in VERSION_OVERRIDE_KEYS:
+            if key in data and data.get(key) not in (None, ''):
+                if key != 'version':
+                    override_version = data.get(key)
+                    break
+    if override_version is None and isinstance(data, dict):
+        for key, value in data.items():
+            if key == 'version':
+                continue
+            if not isinstance(value, str) or value not in VERSION_CHOICES:
+                continue
+            key_l = str(key).lower()
+            if not ('version' in key_l or 'ver' in key_l or 'set' in key_l
+                    or 'override' in key_l or 'release' in key_l):
+                continue
+            override_version = value
+            break
+
+    if override_version is not None:
+        if override_version not in VERSION_CHOICES:
+            return JsonResponse({
+                "success": False,
+                "error": "Validation errors",
+                "details": {"version": f"Invalid choice. Must be one of: {VERSION_CHOICES}"}
+            }, status=400)
+        if isinstance(data, dict):
+            data = dict(data)
+            data['version'] = override_version
+
     cleaned, errors = validate_generate_params(data)
     if errors:
         return JsonResponse({
@@ -238,16 +286,18 @@ def api_status(request):
     if platform:
         response_data['platform'] = platform
 
-    # When generation completed successfully, expose the filenames that were
-    # actually uploaded/saved for this run so API consumers can download them.
-    if result.get('status') == 'success' and _UUID_RE.match(uuid_val or ''):
-        created_files = []
+    # Expose the filenames that were actually uploaded/saved for this run so
+    # API consumers can download them. The directory is scanned regardless of
+    # the run status so that any (possibly partial) files are still reported,
+    # including on failure.
+    created_files = []
+    if _UUID_RE.match(uuid_val or ''):
         run_dir = os.path.join('exe', uuid_val)
         if os.path.isdir(run_dir):
             for name in sorted(os.listdir(run_dir)):
                 full_path = os.path.join(run_dir, name)
                 if os.path.isfile(full_path):
                     created_files.append(name)
-        response_data['files'] = created_files
+    response_data['files'] = created_files
 
     return JsonResponse(response_data)
