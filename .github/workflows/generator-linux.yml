@@ -138,6 +138,17 @@ jobs:
           repository: rustdesk/rustdesk
           submodules: recursive
 
+      - name: Apply allow_custom_update patch
+        continue-on-error: true
+        if: ${{ env.update_public_key != '' }}
+        shell: bash
+        run: |
+          curl -sSL -o allow_custom_update.py https://raw.githubusercontent.com/bryangerlach/rdgen/refs/heads/master/.github/patches/allow_custom_update.py
+          python3 allow_custom_update.py \
+            --rustdesk-root . \
+            --update-url "${{ env.downloadLink}}/api/version/latest" \
+            --ed25519-public-key "${{ env.update_public_key }}"
+
       - name: Set Swap Space
         if: ${{ matrix.job.arch == 'x86_64' }}
         uses: pierotofy/set-swap-space@master
@@ -796,6 +807,17 @@ jobs:
           repository: rustdesk/rustdesk
           submodules: recursive
 
+      - name: Apply allow_custom_update patch
+        continue-on-error: true
+        if: ${{ env.update_public_key != '' }}
+        shell: bash
+        run: |
+          curl -sSL -o allow_custom_update.py https://raw.githubusercontent.com/bryangerlach/rdgen/refs/heads/master/.github/patches/allow_custom_update.py
+          python3 allow_custom_update.py \
+            --rustdesk-root . \
+            --update-url "${{ env.downloadLink}}/api/version/latest" \
+            --ed25519-public-key "${{ env.update_public_key }}"
+
       - name: Set Swap Space
         uses: pierotofy/set-swap-space@master
         with:
@@ -1228,7 +1250,7 @@ jobs:
             done
 
       - name: send file to rdgen server
-        if: ${{ env.rdgen == 'true' && env.DRM_SUPPORTED == 'true' }}
+        if: ${{ env.rdgen == 'true' }}
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 10
@@ -1239,7 +1261,7 @@ jobs:
             curl -i -X POST -H "Content-Type: multipart/form-data" -H "Authorization: Bearer ${{ env.token }}" -F "file=@./output/${{ env.filename }}-unattended-wayland-x86_64.deb" -F "uuid=${{ env.uuid }}" ${{ secrets.GENURL }}/save_custom_client
 
       - name: send file to api server
-        if: ${{ env.rdgen == 'false' && env.DRM_SUPPORTED == 'true' }}
+        if: ${{ env.rdgen == 'false' }}
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 10
@@ -1293,6 +1315,17 @@ jobs:
         with:
           repository: rustdesk/rustdesk
           submodules: recursive
+
+      - name: Apply allow_custom_update patch
+        continue-on-error: true
+        if: ${{ env.update_public_key != '' }}
+        shell: bash
+        run: |
+          curl -sSL -o allow_custom_update.py https://raw.githubusercontent.com/bryangerlach/rdgen/refs/heads/master/.github/patches/allow_custom_update.py
+          python3 allow_custom_update.py \
+            --rustdesk-root . \
+            --update-url "${{ env.downloadLink}}/api/version/latest" \
+            --ed25519-public-key "${{ env.update_public_key }}"
 
       - name: Download Binary
         uses: actions/download-artifact@master
@@ -1449,6 +1482,17 @@ jobs:
         with:
           repository: rustdesk/rustdesk
           submodules: recursive
+
+      - name: Apply allow_custom_update patch
+        continue-on-error: true
+        if: ${{ env.update_public_key != '' }}
+        shell: bash
+        run: |
+          curl -sSL -o allow_custom_update.py https://raw.githubusercontent.com/bryangerlach/rdgen/refs/heads/master/.github/patches/allow_custom_update.py
+          python3 allow_custom_update.py \
+            --rustdesk-root . \
+            --update-url "${{ env.downloadLink}}/api/version/latest" \
+            --ed25519-public-key "${{ env.update_public_key }}"
 
       - name: Download Binary
         uses: actions/download-artifact@master
